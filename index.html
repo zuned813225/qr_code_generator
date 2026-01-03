@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk QR Code Generator</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        input,
+        textarea,
+        select {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        #qrContainer {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .qr-card {
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .qr-card img {
+            max-width: 200px;
+            height: auto;
+            margin-bottom: 5px;
+        }
+
+        .qr-text {
+            font-size: 14px;
+            margin-top: 5px;
+            color: #000;
+            font-weight: bold;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        #progressBar {
+            width: 100%;
+            background-color: #f3f3f3;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+
+        #progressBarFill {
+            height: 20px;
+            background-color: #4CAF50;
+            border-radius: 5px;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        #loadingIndicator {
+            display: none;
+            text-align: center;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Bulk QR Code Generator</h1>
+
+        <div class="section">
+            <h2>Generation Options</h2>
+            <label for="generationType">Select Input Method:</label>
+            <select id="generationType">
+                <option value="manual">Manual JSON Input</option>
+                <option value="upload">Upload JSON Files</option>
+                <option value="count">Generate Multiple Similar Codes</option>
+            </select>
+        </div>
+
+        <!-- Manual JSON Input -->
+        <div class="section" id="manualSection">
+            <h3>Enter JSON Data</h3>
+            <label for="jsonData">JSON Data (one per line):</label>
+            <textarea id="jsonData" rows="10" placeholder='{"color": "Black", "price": 7646, "design": "Pearl"}
+{"color": "Red", "price": 5999, "design": "Matte"}'></textarea>
+            <button id="generateFromText">Generate QR Codes</button>
+        </div>
+
+        <!-- File Upload -->
+        <div class="section hidden" id="uploadSection">
+            <h3>Upload JSON Files</h3>
+            <label for="jsonFiles">Select JSON files:</label>
+            <input type="file" id="jsonFiles" accept=".json" multiple>
+            <button id="generateFromFiles">Generate QR Codes</button>
+        </div>
+
+        <!-- Count-based Generation -->
+        <div class="section hidden" id="countSection">
+            <h3>Generate Multiple Similar Codes</h3>
+            <label for="baseJson">Base JSON Data:</label>
+            <textarea id="baseJson" rows="5"
+                placeholder='{"color": "Black", "price": 7646, "design": "Pearl"}'></textarea>
+            <label for="qrCount">Number of QR Codes to Generate:</label>
+            <input type="number" id="qrCount" min="1" value="5">
+            <label for="idField">Field to increment (e.g., "sku"):</label>
+            <input type="text" id="idField" placeholder="sku">
+            <button id="generateFromCount">Generate QR Codes</button>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="section" id="progressSection" style="display: none;">
+            <h3>Generation Progress</h3>
+            <div id="progressBar">
+                <div id="progressBarFill"></div>
+            </div>
+            <p id="progressText">Preparing to generate...</p>
+        </div>
+
+        <!-- Results -->
+        <div class="section" id="resultsSection" style="display: none;">
+            <h2>Generated QR Codes</h2>
+            <button id="downloadAll">Download All as ZIP</button>
+            <div id="loadingIndicator">Preparing download... Please wait.</div>
+            <div id="qrContainer"></div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const generationType = document.getElementById('generationType');
+        const manualSection = document.getElementById('manualSection');
+        const uploadSection = document.getElementById('uploadSection');
+        const countSection = document.getElementById('countSection');
+        const progressSection = document.getElementById('progressSection');
+        const resultsSection = document.getElementById('resultsSection');
+        const qrContainer = document.getElementById('qrContainer');
+        const progressBarFill = document.getElementById('progressBarFill');
+        const progressText = document.getElementById('progressText');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+
+        // Show/hide sections based on selection
+        generationType.addEventListener('change', () => {
+            manualSection.classList.add('hidden');
+            uploadSection.classList.add('hidden');
+            countSection.classList.add('hidden');
+
+            const selectedOption = generationType.value;
+            if (selectedOption === 'manual') {
+                manualSection.classList.remove('hidden');
+            } else if (selectedOption === 'upload') {
+                uploadSection.classList.remove('hidden');
+            } else if (selectedOption === 'count') {
+                countSection.classList.remove('hidden');
+            }
+        });
+
+        // Generate from text input
+        document.getElementById('generateFromText').addEventListener('click', () => {
+            const jsonText = document.getElementById('jsonData').value.trim();
+            if (!jsonText) {
+                alert('Please enter JSON data');
+                return;
+            }
+
+            try {
+                // Parse multiple JSON objects (one per line)
+                const jsonLines = jsonText.split('\n').filter(line => line.trim());
+                const jsonData = jsonLines.map(line => JSON.parse(line));
+                generateQRCodes(jsonData);
+            } catch (e) {
+                alert('Invalid JSON format: ' + e.message);
+            }
+        });
+
+        // Generate from file upload
+        document.getElementById('generateFromFiles').addEventListener('click', () => {
+            const files = document.getElementById('jsonFiles').files;
+            if (files.length === 0) {
+                alert('Please select at least one JSON file');
+                return;
+            }
+
+            const promises = Array.from(files).map(file => {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = e => {
+                        try {
+                            resolve(JSON.parse(e.target.result));
+                        } catch (e) {
+                            reject(`Error parsing ${file.name}: ${e.message}`);
+                        }
+                    };
+                    reader.onerror = () => reject(`Error reading ${file.name}`);
+                    reader.readAsText(file);
+                });
+            });
+
+            Promise.all(promises)
+                .then(jsonData => generateQRCodes(jsonData))
+                .catch(error => alert(error));
+        });
+
+        // Generate from count
+        document.getElementById('generateFromCount').addEventListener('click', () => {
+            const baseJsonText = document.getElementById('baseJson').value.trim();
+            const count = parseInt(document.getElementById('qrCount').value);
+            const idField = document.getElementById('idField').value.trim();
+
+            if (!baseJsonText) {
+                alert('Please enter base JSON data');
+                return;
+            }
+
+            if (isNaN(count) || count < 1) {
+                alert('Please enter a valid number of QR codes to generate');
+                return;
+            }
+
+            if (!idField) {
+                alert('Please specify a field to increment');
+                return;
+            }
+
+            try {
+                const baseData = JSON.parse(baseJsonText);
+                const jsonData = [];
+
+                for (let i = 1; i <= count; i++) {
+                    const newData = JSON.parse(JSON.stringify(baseData));
+                    newData[idField] = `${baseData[idField] || 'ID'}_${i}`;
+                    jsonData.push(newData);
+                }
+
+                generateQRCodes(jsonData);
+            } catch (e) {
+                alert('Invalid JSON format: ' + e.message);
+            }
+        });
+
+        // Download all as ZIP - Updated version
+        document.getElementById('downloadAll').addEventListener('click', async () => {
+            const zip = new JSZip();
+            const qrCards = document.querySelectorAll('#qrContainer .qr-card');
+            loadingIndicator.style.display = 'block';
+
+            try {
+                // Process all cards first
+                const imagePromises = Array.from(qrCards).map((card, index) => {
+                    return new Promise((resolve) => {
+                        const canvas = document.createElement('canvas');
+                        const img = card.querySelector('img');
+                        const ctx = canvas.getContext('2d');
+
+                        // Set canvas size (QR code + text area)
+                        const qrSize = 200;
+                        const textHeight = 30;
+                        canvas.width = qrSize;
+                        canvas.height = qrSize + textHeight;
+
+                        // White background
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                        // Draw QR code
+                        ctx.drawImage(img, 0, 0, qrSize, qrSize);
+
+                        // Draw text below QR code (single line)
+                        ctx.font = 'bold 14px Arial';
+                        ctx.fillStyle = '#000000';
+                        ctx.textAlign = 'center';
+
+                        // Get the text content (only values with proper spacing)
+                        const textContent = card.querySelector('.qr-text').textContent;
+                        ctx.fillText(textContent, qrSize / 2, qrSize + 20);
+
+                        // Convert to JPEG
+                        canvas.toBlob(blob => {
+                            zip.file(`qrcode_${index + 1}.jpg`, blob);
+                            resolve();
+                        }, 'image/jpeg', 0.92);
+                    });
+                });
+
+                await Promise.all(imagePromises);
+                loadingIndicator.textContent = 'Creating ZIP file...';
+                const content = await zip.generateAsync({ type: 'blob' });
+                saveAs(content, 'qrcodes.zip');
+            } catch (error) {
+                console.error('Error creating ZIP:', error);
+                alert('Error creating ZIP file. Please try again.');
+            } finally {
+                loadingIndicator.style.display = 'none';
+            }
+        });
+
+        // Main generation function
+        function generateQRCodes(jsonData) {
+            // Reset UI
+            qrContainer.innerHTML = '';
+            resultsSection.style.display = 'none';
+            progressSection.style.display = 'block';
+            progressBarFill.style.width = '0%';
+            progressText.textContent = 'Starting generation...';
+
+            // Process each JSON object
+            const total = jsonData.length;
+            let completed = 0;
+            const qrCodes = [];
+
+            jsonData.forEach((data, index) => {
+                setTimeout(() => {
+                    try {
+                        const jsonStr = JSON.stringify(data);
+                        const qrId = `qr-${index}`;
+
+                        QRCode.toDataURL(jsonStr, {
+                            width: 200,
+                            margin: 2,
+                            color: {
+                                dark: '#000000',
+                                light: '#ffffff'
+                            }
+                        }, (err, url) => {
+                            if (err) {
+                                console.error('Error generating QR code:', err);
+                            } else {
+                                qrCodes.push({
+                                    id: qrId,
+                                    data: data,
+                                    url: url
+                                });
+
+                                // Create text content with only values
+                                const color = data.color || 'N/A';
+                                const price = data.price ? '₹' + data.price : 'N/A';
+                                const design = data.design || 'N/A';
+                                const textContent = `Color: '${color}', Price: '${price}', <br>Design: '${design}'`;
+
+                                // Create card
+                                const card = document.createElement('div');
+                                card.className = 'qr-card';
+                                card.innerHTML = `
+                                    <img src="${url}" alt="QR Code">
+                                    <div class="qr-text">${textContent}</div>
+                                `;
+                                qrContainer.appendChild(card);
+                            }
+
+                            // Update progress
+                            completed++;
+                            const progress = Math.round((completed / total) * 100);
+                            progressBarFill.style.width = `${progress}%`;
+                            progressText.textContent = `Generated ${completed} of ${total} QR codes (${progress}%)`;
+
+                            // If done, show results
+                            if (completed === total) {
+                                progressText.textContent = `Completed! Generated ${total} QR codes`;
+                                resultsSection.style.display = 'block';
+                            }
+                        });
+                    } catch (e) {
+                        console.error('Error processing item', index, e);
+                        completed++;
+                    }
+                }, index * 100);
+            });
+        }
+    </script>
+</body>
+
+</html>
